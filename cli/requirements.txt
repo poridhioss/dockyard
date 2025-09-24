@@ -1,0 +1,8 @@
+# CLI-specific dependencies
+grpcio==1.60.0
+click==8.1.7
+pyyaml==6.0.1
+protobuf>=4.21.0,<5.0.0
+
+# Only needed for proto generation during development
+grpcio-tools==1.60.0
