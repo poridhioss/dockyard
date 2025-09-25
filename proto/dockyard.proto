@@ -5,6 +5,7 @@ package dockyard;
 service DockyardService {
     rpc LaunchContainer(LaunchRequest) returns (LaunchResponse);
     rpc StopContainer(StopRequest) returns (StopResponse);
+    rpc ExecContainer(stream ExecRequest) returns (stream ExecResponse);
 }
 
 message LaunchRequest {
@@ -29,4 +30,44 @@ message StopResponse {
     bool success = 1;
     string container_id = 2;
     string message = 3;
+}
+
+message ExecRequest {
+    oneof request_type {
+        ExecStart start = 1;
+        ExecInput input = 2;
+    }
+}
+
+message ExecStart {
+    string container_identifier = 1; // name or ID
+    repeated string command = 2;     // command and arguments
+    bool interactive = 3;            // allocate TTY for interactive session
+    string user = 4;                 // user to run as (optional)
+    string working_dir = 5;          // working directory (optional)
+    map<string, string> environment = 6; // environment variables
+}
+
+message ExecInput {
+    bytes data = 1;                  // stdin data
+}
+
+message ExecResponse {
+    oneof response_type {
+        ExecStatus status = 1;
+        ExecOutput output = 2;
+    }
+}
+
+message ExecStatus {
+    bool success = 1;
+    string exec_id = 2;              // execution ID
+    string message = 3;
+    int32 exit_code = 4;             // command exit code (when finished)
+    bool finished = 5;               // true when command execution is complete
+}
+
+message ExecOutput {
+    bytes data = 1;                  // stdout/stderr data
+    string stream_type = 2;          // "stdout" or "stderr"
 }

@@ -4,18 +4,20 @@
 
 Dockyard is a lightweight, distributed container orchestration system that enables remote Docker container management across EC2 instances using gRPC. Built as a progressive learning project, it demonstrates modern microservices architecture, distributed systems design, and DevOps best practices.
 
-## Current Status: Lab 02 Complete ✅
+## Current Status: Lab 03 Complete ✅
 
 ### What's Working Now
 
 **Core Functionality**:
 - Remote container launch via gRPC
 - Container stop functionality with graceful/force options
+- Container exec functionality with interactive support
 - Named container deployment
 - YAML-based configuration support
 - EC2 agent deployment
 - Local CLI tool
 - Batch operations support
+- Bidirectional streaming for real-time communication
 
 **Example Commands**:
 ```bash
@@ -32,6 +34,12 @@ dockyard launch -f app.yaml
 dockyard stop web-server
 dockyard stop --force nginx
 dockyard stop --timeout 30 redis cache
+
+# Execute commands in containers
+dockyard exec web-server ls -la
+dockyard exec --interactive web-server bash
+dockyard exec --user root web-server whoami
+dockyard exec --env "DEBUG=true" web-server python script.py
 ```
 
 ### Technology Stack
@@ -73,7 +81,9 @@ dockyard/
 │   └── dockyard.proto     # Service contracts
 │
 ├── docs/                  # Documentation
-│   └── Lab-01/           # Lab 01 documentation
+│   ├── Lab-01/           # Lab 01 documentation
+│   ├── Lab-02/           # Lab 02 documentation
+│   └── Lab-03/           # Lab 03 documentation
 │
 ├── labs/                  # Lab resources
 │   └── lab1-launch/      # Sample configurations
@@ -127,28 +137,35 @@ dockyard stop container1 container2 container3
 
 ---
 
-### 📋 Lab 03: Container Exec Functionality
-**Status**: Planned
+### ✅ Lab 03: Container Exec Functionality
+**Status**: Complete
 **Branch**: `lab-03`
 
-**Features to Implement**:
+**Features Implemented**:
 - Execute commands in containers
-- Interactive shell support
+- Interactive shell support with TTY allocation
 - Non-interactive command execution
 - User context switching
+- Environment variable injection
+- Working directory control
+- Cross-platform terminal handling
+- Bidirectional streaming communication
 
 **New Commands**:
 ```bash
-dockyard exec web-server bash
-dockyard exec web-server "ls -la"
-dockyard exec --user root web-server "apt update"
+dockyard exec web-server bash                    # Interactive shell
+dockyard exec web-server ls -la                 # Command execution
+dockyard exec --user root web-server whoami     # User switching
+dockyard exec --interactive web-server bash     # Explicit interactive mode
+dockyard exec --env "DEBUG=true" web-server env # Environment variables
+dockyard exec --workdir /tmp web-server pwd     # Working directory
 ```
 
-**Technical Requirements**:
-- Add `ExecContainer` RPC with streaming
-- Implement Docker exec API
-- Handle stdin/stdout/stderr streams
-- TTY allocation for interactive sessions
+**Key Files**:
+- `proto/dockyard.proto` - Updated with ExecContainer RPC (bidirectional streaming)
+- `agent/main.py` - ExecContainer method with threading and socket handling
+- `cli/main.py` - Exec command with cross-platform terminal support
+- `docs/Lab-03/` - Complete documentation and examples
 
 ---
 
@@ -226,11 +243,11 @@ dockyard volume create myvol
 - [x] Error recovery patterns
 - [x] Batch operations
 
-### Lab 03
-- [ ] Bidirectional streaming
-- [ ] Interactive I/O handling
-- [ ] Process management
-- [ ] Security contexts
+### Lab 03 ✅
+- [x] Bidirectional streaming
+- [x] Interactive I/O handling
+- [x] Process management
+- [x] Security contexts
 
 ### Lab 04
 - [ ] Real-time data streaming
@@ -360,6 +377,8 @@ This project is designed for learning. Each lab builds upon the previous one, in
 
 ### Documentation
 - [Lab 01 Guide](docs/Lab-01/README.md)
+- [Lab 02 Guide](docs/Lab-02/README.md)
+- [Lab 03 Guide](docs/Lab-03/README.md)
 - [gRPC Python Documentation](https://grpc.io/docs/languages/python/)
 - [Docker SDK for Python](https://docker-py.readthedocs.io/)
 - [Click Documentation](https://click.palletsprojects.com/)
@@ -376,4 +395,4 @@ This is an educational project designed for learning distributed systems and con
 
 ---
 
-**Current Focus**: Lab 02 is complete with container stop functionality. Ready to proceed with Lab 03 (Container Exec) implementation when needed.
+**Current Focus**: Lab 03 is complete with container exec functionality including bidirectional streaming and interactive shell support. Ready to proceed with Lab 04 (Container Logs) implementation when needed.
