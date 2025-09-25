@@ -5,6 +5,8 @@ import grpc
 import docker
 import yaml
 import logging
+import threading
+import queue
 from concurrent import futures
 from pathlib import Path
 
@@ -160,6 +162,241 @@ class DockyardServicer(dockyard_pb2_grpc.DockyardServiceServicer):
             return dockyard_pb2.StopResponse(
                 success=False,
                 message=f"Error: {str(e)}"
+            )
+
+    def ExecContainer(self, request_iterator, context):
+        """Execute commands in a container with bidirectional streaming"""
+        try:
+            # Get the first request (should be ExecStart)
+            first_request = next(request_iterator)
+
+            if not first_request.HasField('start'):
+                yield dockyard_pb2.ExecResponse(
+                    status=dockyard_pb2.ExecStatus(
+                        success=False,
+                        message="First request must be ExecStart"
+                    )
+                )
+                return
+
+            exec_start = first_request.start
+            container_identifier = exec_start.container_identifier
+            command = list(exec_start.command)
+            interactive = exec_start.interactive
+            user = exec_start.user if exec_start.user else None
+            working_dir = exec_start.working_dir if exec_start.working_dir else None
+            environment = dict(exec_start.environment) if exec_start.environment else None
+
+            if not command:
+                yield dockyard_pb2.ExecResponse(
+                    status=dockyard_pb2.ExecStatus(
+                        success=False,
+                        message="Command is required"
+                    )
+                )
+                return
+
+            # Find the container
+            try:
+                container = self.docker_client.containers.get(container_identifier)
+            except docker.errors.NotFound:
+                yield dockyard_pb2.ExecResponse(
+                    status=dockyard_pb2.ExecStatus(
+                        success=False,
+                        message=f"Container '{container_identifier}' not found"
+                    )
+                )
+                return
+
+            # Check if container is running
+            container.reload()
+            if container.status != 'running':
+                yield dockyard_pb2.ExecResponse(
+                    status=dockyard_pb2.ExecStatus(
+                        success=False,
+                        message=f"Container '{container_identifier}' is not running (status: {container.status})"
+                    )
+                )
+                return
+
+            # Create exec instance
+            exec_config = {
+                'cmd': command,
+                'stdout': True,
+                'stderr': True,
+                'stdin': True,
+                'tty': interactive,
+            }
+
+            if user:
+                exec_config['user'] = user
+            if working_dir:
+                exec_config['workdir'] = working_dir
+            if environment:
+                exec_config['environment'] = environment
+
+            exec_instance = self.docker_client.api.exec_create(
+                container.id,
+                **exec_config
+            )
+            exec_id = exec_instance['Id']
+
+            logger.info(f"Created exec instance {exec_id[:12]} in container {container.id[:12]}")
+
+            # Start execution
+            exec_socket = self.docker_client.api.exec_start(
+                exec_id,
+                detach=False,
+                tty=interactive,
+                stream=True,
+                socket=True
+            )
+
+            # Send initial success status
+            yield dockyard_pb2.ExecResponse(
+                status=dockyard_pb2.ExecStatus(
+                    success=True,
+                    exec_id=exec_id[:12],
+                    message="Execution started successfully"
+                )
+            )
+
+            # Create queues for communication
+            input_queue = queue.Queue()
+            output_queue = queue.Queue()
+
+            # Thread to handle stdin from client
+            def handle_input():
+                try:
+                    for request in request_iterator:
+                        if request.HasField('input'):
+                            input_data = request.input.data
+                            if input_data:
+                                exec_socket._sock.send(input_data)
+                except Exception as e:
+                    logger.error(f"Input handling error: {e}")
+                finally:
+                    # Close the socket when no more input
+                    try:
+                        exec_socket._sock.shutdown(1)  # Shutdown write side
+                    except:
+                        pass
+
+            # Thread to handle stdout/stderr from container
+            def handle_output():
+                try:
+                    while True:
+                        try:
+                            # Receive data from exec socket
+                            data = exec_socket._sock.recv(4096)
+                            if not data:
+                                break
+
+                            # For TTY mode, all output comes as stdout
+                            # For non-TTY mode, Docker multiplexes stdout/stderr
+                            if interactive:
+                                output_queue.put(('stdout', data))
+                            else:
+                                # Parse Docker's stream format for stdout/stderr separation
+                                if len(data) >= 8:
+                                    stream_type = data[0]  # 1=stdout, 2=stderr
+                                    size = int.from_bytes(data[4:8], 'big')
+                                    payload = data[8:8+size] if size <= len(data)-8 else data[8:]
+
+                                    stream_name = 'stdout' if stream_type == 1 else 'stderr'
+                                    output_queue.put((stream_name, payload))
+                                else:
+                                    # Fallback for malformed data
+                                    output_queue.put(('stdout', data))
+
+                        except Exception as e:
+                            logger.error(f"Output handling error: {e}")
+                            break
+
+                    output_queue.put((None, None))  # Signal end
+                except Exception as e:
+                    logger.error(f"Output thread error: {e}")
+                    output_queue.put((None, None))
+
+            # Start threads
+            input_thread = threading.Thread(target=handle_input)
+            output_thread = threading.Thread(target=handle_output)
+
+            input_thread.daemon = True
+            output_thread.daemon = True
+
+            input_thread.start()
+            output_thread.start()
+
+            # Send output to client
+            try:
+                while True:
+                    try:
+                        stream_type, data = output_queue.get(timeout=1)
+                        if stream_type is None:  # End signal
+                            break
+
+                        if data:
+                            yield dockyard_pb2.ExecResponse(
+                                output=dockyard_pb2.ExecOutput(
+                                    data=data,
+                                    stream_type=stream_type
+                                )
+                            )
+                    except queue.Empty:
+                        # Check if exec is still running
+                        try:
+                            exec_info = self.docker_client.api.exec_inspect(exec_id)
+                            if not exec_info.get('Running', True):
+                                break
+                        except:
+                            break
+                        continue
+
+            except Exception as e:
+                logger.error(f"Output streaming error: {e}")
+
+            # Get final execution result
+            try:
+                exec_info = self.docker_client.api.exec_inspect(exec_id)
+                exit_code = exec_info.get('ExitCode', 0)
+
+                yield dockyard_pb2.ExecResponse(
+                    status=dockyard_pb2.ExecStatus(
+                        success=True,
+                        exec_id=exec_id[:12],
+                        message="Execution completed",
+                        exit_code=exit_code,
+                        finished=True
+                    )
+                )
+
+                logger.info(f"Exec {exec_id[:12]} completed with exit code {exit_code}")
+
+            except Exception as e:
+                logger.error(f"Failed to get exec result: {e}")
+                yield dockyard_pb2.ExecResponse(
+                    status=dockyard_pb2.ExecStatus(
+                        success=False,
+                        exec_id=exec_id[:12],
+                        message=f"Failed to get execution result: {str(e)}",
+                        finished=True
+                    )
+                )
+
+            # Cleanup
+            try:
+                exec_socket.close()
+            except:
+                pass
+
+        except Exception as e:
+            logger.error(f"ExecContainer error: {e}")
+            yield dockyard_pb2.ExecResponse(
+                status=dockyard_pb2.ExecStatus(
+                    success=False,
+                    message=f"Execution failed: {str(e)}"
+                )
             )
 
     def _parse_config(self, config):
