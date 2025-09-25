@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import sys
 import os
+import click
 import grpc
-import docker
 import yaml
-import logging
-from concurrent import futures
 from pathlib import Path
 
 # Add parent directory to path for proto imports
@@ -14,129 +12,153 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dockyard_pb2
 import dockyard_pb2_grpc
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
+class DockyardClient:
+    def __init__(self, host='localhost', port=50051):
+        self.channel = grpc.insecure_channel(f'{host}:{port}')
+        self.stub = dockyard_pb2_grpc.DockyardServiceStub(self.channel)
 
-class DockyardServicer(dockyard_pb2_grpc.DockyardServiceServicer):
-    def __init__(self):
+    def launch_container(self, image=None, name=None, config_file=None):
+        request = dockyard_pb2.LaunchRequest(
+            image=image or '',
+            name=name or '',
+            config_file=config_file or ''
+        )
+
         try:
-            # Use docker.from_env() which properly handles socket connection
-            self.docker_client = docker.from_env()
-            logger.info("Connected to Docker daemon")
-        except Exception as e:
-            logger.error(f"Failed to connect to Docker: {e}")
-            raise
+            response = self.stub.LaunchContainer(request)
+            return response
+        except grpc.RpcError as e:
+            click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
+            return None
 
-    def LaunchContainer(self, request, context):
+    def stop_container(self, container_identifier, force=False, timeout=10):
+        request = dockyard_pb2.StopRequest(
+            container_identifier=container_identifier,
+            force=force,
+            timeout=timeout
+        )
+
         try:
-            container_config = {}
+            response = self.stub.StopContainer(request)
+            return response
+        except grpc.RpcError as e:
+            click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
+            return None
 
-            # Handle config file if provided
-            if request.config_file:
-                config_path = Path(request.config_file)
-                if config_path.exists():
-                    with open(config_path, 'r') as f:
-                        config = yaml.safe_load(f)
-                        container_config = self._parse_config(config)
-                else:
-                    return dockyard_pb2.LaunchResponse(
-                        success=False,
-                        message=f"Config file not found: {request.config_file}"
-                    )
-
-            # Basic configuration
-            image = request.image or container_config.get('image')
-            if not image:
-                return dockyard_pb2.LaunchResponse(
-                    success=False,
-                    message="No image specified"
-                )
-
-            name = request.name or container_config.get('name')
-
-            # Pull image if not exists
-            try:
-                self.docker_client.images.get(image)
-                logger.info(f"Image {image} already exists")
-            except docker.errors.ImageNotFound:
-                logger.info(f"Pulling image {image}...")
-                self.docker_client.images.pull(image)
-
-            # Launch container
-            container_args = {
-                'image': image,
-                'detach': True,
-                'auto_remove': False
-            }
-
-            if name:
-                container_args['name'] = name
-
-            # Apply config file settings if available
-            if container_config:
-                if 'environment' in container_config:
-                    container_args['environment'] = container_config['environment']
-                if 'ports' in container_config:
-                    container_args['ports'] = container_config['ports']
-                if 'volumes' in container_config:
-                    container_args['volumes'] = container_config['volumes']
-
-            container = self.docker_client.containers.run(**container_args)
-
-            logger.info(f"Container launched: {container.id[:12]}")
-            return dockyard_pb2.LaunchResponse(
-                success=True,
-                container_id=container.id[:12],
-                message=f"Container {name or container.id[:12]} launched successfully"
-            )
-
-        except docker.errors.APIError as e:
-            logger.error(f"Docker API error: {e}")
-            return dockyard_pb2.LaunchResponse(
-                success=False,
-                message=f"Docker error: {str(e)}"
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return dockyard_pb2.LaunchResponse(
-                success=False,
-                message=f"Error: {str(e)}"
-            )
-
-    def _parse_config(self, config):
-        """Parse YAML config file for container settings"""
-        result = {}
-        if 'image' in config:
-            result['image'] = config['image']
-        if 'name' in config:
-            result['name'] = config['name']
-        if 'environment' in config:
-            result['environment'] = config['environment']
-        if 'ports' in config:
-            result['ports'] = config['ports']
-        if 'volumes' in config:
-            result['volumes'] = config['volumes']
-        return result
+    def close(self):
+        self.channel.close()
 
 
-def serve():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    dockyard_pb2_grpc.add_DockyardServiceServicer_to_server(
-        DockyardServicer(), server
+@click.group()
+@click.option('--host', default='localhost', envvar='DOCKYARD_HOST',
+              help='Agent host address')
+@click.option('--port', default=50051, envvar='DOCKYARD_PORT',
+              help='Agent port')
+@click.pass_context
+def cli(ctx, host, port):
+    """Dockyard - Container orchestration CLI"""
+    ctx.ensure_object(dict)
+    ctx.obj['client'] = DockyardClient(host, port)
+
+
+@cli.command()
+@click.argument('image', required=False)
+@click.option('--name', '-n', help='Container name')
+@click.option('-f', '--file', 'config_file', help='YAML config file')
+@click.pass_context
+def launch(ctx, image, name, config_file):
+    """Launch a container
+
+    Examples:
+        dockyard launch nginx:latest
+        dockyard launch redis:alpine --name cache
+        dockyard launch -f app.yaml
+    """
+    client = ctx.obj['client']
+
+    # Validate inputs
+    if not image and not config_file:
+        click.echo("Error: Either provide an image or a config file (-f)", err=True)
+        sys.exit(1)
+
+    if config_file and not Path(config_file).exists():
+        click.echo(f"Error: Config file not found: {config_file}", err=True)
+        sys.exit(1)
+
+    # Launch container
+    click.echo(f"Launching container...")
+    response = client.launch_container(
+        image=image,
+        name=name,
+        config_file=config_file
     )
 
-    # Listen on all interfaces for EC2 access
-    server.add_insecure_port('[::]:50051')
-    server.start()
-    logger.info("Agent started on port 50051")
+    if response:
+        if response.success:
+            click.echo(f"Success: {response.message}")
+            if response.container_id:
+                click.echo(f"Container ID: {response.container_id}")
+        else:
+            click.echo(f"Failed: {response.message}", err=True)
+            sys.exit(1)
 
-    try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        logger.info("Shutting down agent...")
-        server.stop(0)
+    client.close()
+
+
+@cli.command()
+@click.argument('containers', nargs=-1, required=True)
+@click.option('--force', '-f', is_flag=True, help='Force stop (kill instead of graceful stop)')
+@click.option('--timeout', '-t', default=10, help='Timeout in seconds for graceful stop (default: 10)')
+@click.pass_context
+def stop(ctx, containers, force, timeout):
+    """Stop one or more containers
+
+    Examples:
+        dockyard stop web-server
+        dockyard stop nginx redis
+        dockyard stop --force web-server
+        dockyard stop --timeout 30 web-server
+    """
+    client = ctx.obj['client']
+
+    # Handle multiple containers
+    failed_containers = []
+    stopped_containers = []
+
+    for container in containers:
+        click.echo(f"Stopping container '{container}'...")
+
+        response = client.stop_container(
+            container_identifier=container,
+            force=force,
+            timeout=timeout
+        )
+
+        if response:
+            if response.success:
+                click.echo(f"Success: {response.message}")
+                stopped_containers.append(container)
+                if response.container_id:
+                    click.echo(f"Container ID: {response.container_id}")
+            else:
+                click.echo(f"Failed to stop '{container}': {response.message}", err=True)
+                failed_containers.append(container)
+        else:
+            failed_containers.append(container)
+
+    # Summary for batch operations
+    if len(containers) > 1:
+        click.echo(f"\nSummary: {len(stopped_containers)} stopped, {len(failed_containers)} failed")
+        if failed_containers:
+            click.echo(f"Failed containers: {', '.join(failed_containers)}", err=True)
+
+    client.close()
+
+    # Exit with error code if any containers failed to stop
+    if failed_containers:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
-    serve()
+    cli()

@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package dockyard;
+
+service DockyardService {
+    rpc LaunchContainer(LaunchRequest) returns (LaunchResponse);
+    rpc StopContainer(StopRequest) returns (StopResponse);
+}
+
+message LaunchRequest {
+    string image = 1;
+    string name = 2;
+    string config_file = 3;
+}
+
+message LaunchResponse {
+    bool success = 1;
+    string container_id = 2;
+    string message = 3;
+}
+
+message StopRequest {
+    string container_identifier = 1; // name or ID
+    bool force = 2;                  // force stop (kill vs graceful)
+    int32 timeout = 3;              // timeout in seconds
+}
+
+message StopResponse {
+    bool success = 1;
+    string container_id = 2;
+    string message = 3;
+}
