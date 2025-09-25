@@ -4,6 +4,8 @@
 
 Welcome to Dockyard Lab 02! In this lab, you'll extend the container launch functionality from Lab 01 by adding comprehensive container stop operations. You'll learn how to gracefully stop containers, force-kill them, handle batch operations, and manage various edge cases.
 
+![alt text](./images/image.png)
+
 **What You'll Learn:**
 - Container lifecycle management (stop vs kill)
 - gRPC service extension (adding new RPCs)
