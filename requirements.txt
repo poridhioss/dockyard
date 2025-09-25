@@ -1,0 +1,7 @@
+# Development dependencies for proto generation
+grpcio-tools==1.60.0
+protobuf>=4.21.0,<5.0.0
+
+# Install component-specific dependencies:
+# For agent: pip install -r agent/requirements.txt
+# For CLI: pip install -r cli/requirements.txt
