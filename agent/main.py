@@ -104,6 +104,64 @@ class DockyardServicer(dockyard_pb2_grpc.DockyardServiceServicer):
                 message=f"Error: {str(e)}"
             )
 
+    def StopContainer(self, request, context):
+        try:
+            container_identifier = request.container_identifier
+            force = request.force
+            timeout = request.timeout if request.timeout > 0 else 10
+
+            if not container_identifier:
+                return dockyard_pb2.StopResponse(
+                    success=False,
+                    message="Container identifier (name or ID) is required"
+                )
+
+            # Find container by name or ID
+            try:
+                container = self.docker_client.containers.get(container_identifier)
+            except docker.errors.NotFound:
+                return dockyard_pb2.StopResponse(
+                    success=False,
+                    message=f"Container '{container_identifier}' not found"
+                )
+
+            # Check if container is already stopped
+            container.reload()
+            if container.status in ['exited', 'stopped']:
+                return dockyard_pb2.StopResponse(
+                    success=True,
+                    container_id=container.id[:12],
+                    message=f"Container '{container_identifier}' is already stopped"
+                )
+
+            # Stop the container
+            if force:
+                logger.info(f"Force stopping container: {container.id[:12]}")
+                container.kill()
+            else:
+                logger.info(f"Gracefully stopping container: {container.id[:12]} (timeout: {timeout}s)")
+                container.stop(timeout=timeout)
+
+            logger.info(f"Container stopped: {container.id[:12]}")
+            return dockyard_pb2.StopResponse(
+                success=True,
+                container_id=container.id[:12],
+                message=f"Container '{container_identifier}' stopped successfully"
+            )
+
+        except docker.errors.APIError as e:
+            logger.error(f"Docker API error: {e}")
+            return dockyard_pb2.StopResponse(
+                success=False,
+                message=f"Docker error: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            return dockyard_pb2.StopResponse(
+                success=False,
+                message=f"Error: {str(e)}"
+            )
+
     def _parse_config(self, config):
         """Parse YAML config file for container settings"""
         result = {}

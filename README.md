@@ -4,16 +4,18 @@
 
 Dockyard is a lightweight, distributed container orchestration system that enables remote Docker container management across EC2 instances using gRPC. Built as a progressive learning project, it demonstrates modern microservices architecture, distributed systems design, and DevOps best practices.
 
-## Current Status: Lab 01 Complete ✅
+## Current Status: Lab 02 Complete ✅
 
 ### What's Working Now
 
 **Core Functionality**:
 - Remote container launch via gRPC
+- Container stop functionality with graceful/force options
 - Named container deployment
 - YAML-based configuration support
 - EC2 agent deployment
 - Local CLI tool
+- Batch operations support
 
 **Example Commands**:
 ```bash
@@ -25,6 +27,11 @@ dockyard launch redis:alpine --name cache
 
 # YAML configuration support
 dockyard launch -f app.yaml
+
+# Stop containers
+dockyard stop web-server
+dockyard stop --force nginx
+dockyard stop --timeout 30 redis cache
 ```
 
 ### Technology Stack
@@ -94,11 +101,11 @@ dockyard/
 
 ---
 
-### 📋 Lab 02: Container Stop Functionality
-**Status**: Planned
+### ✅ Lab 02: Container Stop Functionality
+**Status**: Complete
 **Branch**: `lab-02`
 
-**Features to Implement**:
+**Features Implemented**:
 - Stop containers by name or ID
 - Batch stop operations
 - Force stop with timeout
@@ -108,14 +115,15 @@ dockyard/
 ```bash
 dockyard stop web-server
 dockyard stop --force nginx
-dockyard stop $(dockyard ps -q)  # Stop all
+dockyard stop --timeout 30 redis cache
+dockyard stop container1 container2 container3
 ```
 
-**Technical Requirements**:
-- Add `StopContainer` RPC to proto
-- Implement Docker stop/kill operations
-- Handle container state transitions
-- Error handling for missing containers
+**Key Files**:
+- `proto/dockyard.proto` - Updated with StopContainer RPC
+- `agent/main.py` - StopContainer method implementation
+- `cli/main.py` - Stop command with options
+- `labs/lab2-stop/` - Examples and test scripts
 
 ---
 
@@ -212,11 +220,11 @@ dockyard volume create myvol
 - [x] CLI development with Click
 - [x] EC2 deployment
 
-### Lab 02
-- [ ] Container lifecycle management
-- [ ] State machine handling
-- [ ] Error recovery patterns
-- [ ] Batch operations
+### Lab 02 ✅
+- [x] Container lifecycle management
+- [x] State machine handling
+- [x] Error recovery patterns
+- [x] Batch operations
 
 ### Lab 03
 - [ ] Bidirectional streaming
@@ -368,4 +376,4 @@ This is an educational project designed for learning distributed systems and con
 
 ---
 
-**Current Focus**: Lab 01 is complete and working. Ready to proceed with Lab 02 implementation when needed.
+**Current Focus**: Lab 02 is complete with container stop functionality. Ready to proceed with Lab 03 (Container Exec) implementation when needed.

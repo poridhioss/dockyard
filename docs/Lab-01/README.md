@@ -116,7 +116,7 @@ ssh -i your-key.pem ubuntu@<ec2-ip-address>
 
 # Install Docker (if not already installed)
 sudo apt update
-sudo apt install -y docker.io
+sudo apt install -y docker.io python3-venv
 sudo systemctl start docker
 sudo systemctl enable docker
 
@@ -133,27 +133,44 @@ docker ps
 
 ```bash
 # Copy project files to EC2
-scp -r -i your-key.pem dockyard/ ubuntu@<ec2-ip>:~/
+scp -r -i your-key.pem agent/ proto/ dockyard_pb2.py dockyard_pb2_grpc.py ubuntu@<ec2-ip>:~/
 
 # SSH into EC2 and setup
 ssh -i your-key.pem ubuntu@<ec2-ip>
-cd ~/dockyard
 
-# Install agent dependencies only
-make install-agent
+# Create virtual environment for agent
+python3 -m venv agent_venv
+source agent_venv/bin/activate
 
-# Generate gRPC code
-make proto
+# Install agent dependencies
+pip install -r agent/requirements.txt
+
+# Generate gRPC code (if needed)
+python3 -m grpc_tools.protoc -I./proto --python_out=. --grpc_python_out=. proto/dockyard.proto
 
 # Start the agent
 python3 agent/main.py
+# Or run in background:
+nohup python3 agent/main.py > agent.log 2>&1 &
 ```
 
 ### 4. Test from Local Machine
 
 ```bash
+# Create local virtual environment
+python3 -m venv venv
+source venv/bin/activate  # Linux/Mac
+# or
+venv\Scripts\activate  # Windows
+
+# Install CLI dependencies
+pip install -r cli/requirements.txt
+
+# Generate gRPC code locally
+python3 -m grpc_tools.protoc -I./proto --python_out=. --grpc_python_out=. proto/dockyard.proto
+
 # Test basic launch
-python3 cli/main.py --host <ec2-ip> launch nginx:latest 
+python3 cli/main.py --host <ec2-ip> launch nginx:latest
 
 # Test with custom name
 python3 cli/main.py --host <ec2-ip> launch redis:alpine --name cache
