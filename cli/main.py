@@ -155,6 +155,58 @@ class DockyardClient:
             click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
             return None
 
+    def list_containers(self, all_containers=False):
+        """List containers with optional showing of all"""
+        request = dockyard_pb2.ListContainersRequest(all=all_containers)
+
+        try:
+            response = self.stub.ListContainers(request)
+            return response
+        except grpc.RpcError as e:
+            click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
+            return None
+
+    def inspect_container(self, container_identifier):
+        """Get detailed container information"""
+        request = dockyard_pb2.InspectContainerRequest(
+            container_identifier=container_identifier
+        )
+
+        try:
+            response = self.stub.InspectContainer(request)
+            return response
+        except grpc.RpcError as e:
+            click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
+            return None
+
+    def remove_container(self, container_identifier, force=False):
+        """Remove a container"""
+        request = dockyard_pb2.RemoveContainerRequest(
+            container_identifier=container_identifier,
+            force=force
+        )
+
+        try:
+            response = self.stub.RemoveContainer(request)
+            return response
+        except grpc.RpcError as e:
+            click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
+            return None
+
+    def get_stats(self, container_identifiers=None, stream=True):
+        """Get container statistics"""
+        request = dockyard_pb2.StatsRequest(
+            container_identifiers=container_identifiers or [],
+            stream=stream
+        )
+
+        try:
+            response_stream = self.stub.GetStats(request)
+            return response_stream
+        except grpc.RpcError as e:
+            click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
+            return None
+
     def close(self):
         self.channel.close()
 
@@ -473,6 +525,251 @@ def logs(ctx, container, follow, tail, since, timestamps, no_stdout, no_stderr):
 
     except KeyboardInterrupt:
         click.echo("\nLog streaming interrupted by user")
+        client.close()
+        sys.exit(130)  # Standard exit code for Ctrl+C
+    except Exception as e:
+        click.echo(f"Unexpected error: {e}", err=True)
+        client.close()
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('-a', '--all', is_flag=True, help='Show all containers (including stopped)')
+@click.pass_context
+def ps(ctx, all):
+    """List containers
+
+    Examples:
+        dockyard ps           # Running containers
+        dockyard ps -a        # All containers including stopped
+    """
+    client = ctx.obj['client']
+
+    try:
+        response = client.list_containers(all_containers=all)
+
+        if not response:
+            sys.exit(1)
+
+        if not response.success:
+            click.echo(f"Error: {response.message}", err=True)
+            sys.exit(1)
+
+        if not response.containers:
+            click.echo("No containers found")
+            return
+
+        # Print header
+        header = f"{'CONTAINER ID':<12} {'IMAGE':<20} {'COMMAND':<30} {'CREATED':<20} {'STATUS':<15} {'PORTS':<20} {'NAMES'}"
+        click.echo(header)
+        click.echo("-" * len(header))
+
+        # Print containers
+        for container in response.containers:
+            # Truncate long values for display
+            image = container.image[:19] if len(container.image) > 19 else container.image
+            command = container.command[:29] if len(container.command) > 29 else container.command
+            created = container.created[:19] if len(container.created) > 19 else container.created
+            status = container.status[:14] if len(container.status) > 14 else container.status
+            ports = container.ports[:19] if len(container.ports) > 19 else container.ports
+
+            click.echo(f"{container.id:<12} {image:<20} {command:<30} {created:<20} {status:<15} {ports:<20} {container.names}")
+
+        client.close()
+
+    except Exception as e:
+        click.echo(f"Unexpected error: {e}", err=True)
+        client.close()
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('container', required=True)
+@click.option('--format', default='json', help='Output format (json)')
+@click.pass_context
+def inspect(ctx, container, format):
+    """Get detailed container information
+
+    Examples:
+        dockyard inspect web-server
+        dockyard inspect 1234567890ab
+    """
+    client = ctx.obj['client']
+
+    try:
+        response = client.inspect_container(container)
+
+        if not response:
+            sys.exit(1)
+
+        if not response.success:
+            click.echo(f"Error: {response.message}", err=True)
+            sys.exit(1)
+
+        if format == 'json':
+            click.echo(response.json_data)
+        else:
+            click.echo(f"Unsupported format: {format}", err=True)
+            sys.exit(1)
+
+        client.close()
+
+    except Exception as e:
+        click.echo(f"Unexpected error: {e}", err=True)
+        client.close()
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('containers', nargs=-1, required=True)
+@click.option('-f', '--force', is_flag=True, help='Force removal of running containers')
+@click.pass_context
+def rm(ctx, containers, force):
+    """Remove one or more containers
+
+    Examples:
+        dockyard rm web-server
+        dockyard rm -f running-container
+        dockyard rm container1 container2 container3
+    """
+    client = ctx.obj['client']
+
+    failed_containers = []
+    removed_containers = []
+
+    for container in containers:
+        click.echo(f"Removing container '{container}'...")
+
+        try:
+            response = client.remove_container(container, force=force)
+
+            if response:
+                if response.success:
+                    click.echo(f"Success: {response.message}")
+                    if response.container_id:
+                        click.echo(f"Container ID: {response.container_id}")
+                    removed_containers.append(container)
+                else:
+                    click.echo(f"Failed to remove '{container}': {response.message}", err=True)
+                    failed_containers.append(container)
+            else:
+                failed_containers.append(container)
+
+        except Exception as e:
+            click.echo(f"Error removing '{container}': {e}", err=True)
+            failed_containers.append(container)
+
+    # Summary for batch operations
+    if len(containers) > 1:
+        click.echo(f"\nSummary: {len(removed_containers)} removed, {len(failed_containers)} failed")
+        if failed_containers:
+            click.echo(f"Failed containers: {', '.join(failed_containers)}", err=True)
+
+    client.close()
+
+    # Exit with error code if any containers failed to be removed
+    if failed_containers:
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('containers', nargs=-1)
+@click.option('--no-stream', is_flag=True, help='Disable streaming (show one-time snapshot)')
+@click.pass_context
+def stats(ctx, containers, no_stream):
+    """Display container resource usage statistics
+
+    Examples:
+        dockyard stats                      # All running containers
+        dockyard stats web-server redis     # Specific containers
+        dockyard stats --no-stream nginx    # One-time snapshot
+    """
+    client = ctx.obj['client']
+
+    stream_mode = not no_stream
+    container_list = list(containers) if containers else []
+
+    if stream_mode:
+        click.echo("Streaming container statistics... (Press Ctrl+C to stop)")
+    else:
+        click.echo("Getting container statistics...")
+
+    def format_bytes(bytes_val):
+        """Convert bytes to human readable format"""
+        if bytes_val == 0:
+            return "0B"
+
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        i = 0
+        while bytes_val >= 1024 and i < len(units) - 1:
+            bytes_val /= 1024.0
+            i += 1
+        return f"{bytes_val:.1f}{units[i]}"
+
+    try:
+        response_stream = client.get_stats(
+            container_identifiers=container_list,
+            stream=stream_mode
+        )
+
+        if not response_stream:
+            sys.exit(1)
+
+        header_printed = False
+
+        for response in response_stream:
+            if not response.success:
+                click.echo(f"Error: {response.message}", err=True)
+                sys.exit(1)
+
+            if not response.stats:
+                click.echo("No running containers found")
+                break
+
+            # Clear screen for streaming mode (simple approach)
+            if stream_mode and header_printed:
+                # Move cursor up to overwrite previous output
+                for _ in range(len(response.stats) + 2):
+                    click.echo("\033[A\033[K", nl=False)
+
+            if not header_printed or stream_mode:
+                # Print header
+                header = f"{'CONTAINER':<12} {'NAME':<15} {'CPU %':<8} {'MEM USAGE / LIMIT':<25} {'MEM %':<8} {'NET I/O':<15} {'BLOCK I/O':<15} {'PIDS':<6}"
+                click.echo(header)
+                click.echo("-" * len(header))
+                header_printed = True
+
+            # Print stats for each container
+            for stat in response.stats:
+                container_id = stat.container_id
+                name = stat.name[:14] if len(stat.name) > 14 else stat.name
+                cpu_pct = f"{stat.cpu_percentage:.2f}%"
+
+                mem_usage = format_bytes(stat.memory_usage)
+                mem_limit = format_bytes(stat.memory_limit)
+                mem_info = f"{mem_usage} / {mem_limit}"
+                mem_pct = f"{stat.memory_percentage:.2f}%"
+
+                net_rx = format_bytes(stat.network_rx)
+                net_tx = format_bytes(stat.network_tx)
+                net_io = f"{net_rx} / {net_tx}"
+
+                block_read = format_bytes(stat.block_read)
+                block_write = format_bytes(stat.block_write)
+                block_io = f"{block_read} / {block_write}"
+
+                pids = str(stat.pids)
+
+                click.echo(f"{container_id:<12} {name:<15} {cpu_pct:<8} {mem_info:<25} {mem_pct:<8} {net_io:<15} {block_io:<15} {pids:<6}")
+
+            # For non-streaming mode, break after first response
+            if not stream_mode:
+                break
+
+        client.close()
+
+    except KeyboardInterrupt:
+        click.echo("\nStatistics streaming interrupted by user")
         client.close()
         sys.exit(130)  # Standard exit code for Ctrl+C
     except Exception as e:

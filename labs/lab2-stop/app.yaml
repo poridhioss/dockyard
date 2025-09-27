@@ -1,7 +1,0 @@
-image: nginx:alpine
-name: web-server
-ports:
-  "80/tcp": 8080
-environment:
-  - NGINX_HOST=localhost
-  - NGINX_PORT=80

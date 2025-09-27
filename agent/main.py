@@ -584,6 +584,300 @@ class DockyardServicer(dockyard_pb2_grpc.DockyardServiceServicer):
             )
 
 
+    def ListContainers(self, request, context):
+        """List containers with optional showing of all (including stopped)"""
+        try:
+            # List containers - all=True includes stopped containers
+            containers = self.docker_client.containers.list(all=request.all)
+
+            container_infos = []
+            for container in containers:
+                try:
+                    # Get container details
+                    container.reload()
+
+                    # Format creation time
+                    created_time = container.attrs.get('Created', '')
+                    if created_time:
+                        # Convert from ISO format to human readable
+                        from datetime import datetime
+                        try:
+                            dt = datetime.fromisoformat(created_time.replace('Z', '+00:00'))
+                            created_time = dt.strftime('%Y-%m-%d %H:%M:%S')
+                        except:
+                            pass
+
+                    # Get command
+                    command = ' '.join(container.attrs.get('Config', {}).get('Cmd', []) or [])
+                    if not command:
+                        command = container.attrs.get('Config', {}).get('Entrypoint', [''])[0] or ''
+
+                    # Format ports
+                    ports_info = ""
+                    if container.attrs.get('NetworkSettings', {}).get('Ports'):
+                        port_mappings = []
+                        for container_port, host_info in container.attrs['NetworkSettings']['Ports'].items():
+                            if host_info:
+                                for mapping in host_info:
+                                    host_port = mapping.get('HostPort', '')
+                                    if host_port:
+                                        port_mappings.append(f"{host_port}:{container_port}")
+                        ports_info = ', '.join(port_mappings)
+
+                    container_info = dockyard_pb2.ContainerInfo(
+                        id=container.id[:12],  # Short ID
+                        image=container.image.tags[0] if container.image.tags else container.image.id[:12],
+                        command=command[:50],  # Truncate long commands
+                        created=created_time,
+                        status=container.status,
+                        ports=ports_info,
+                        names=container.name
+                    )
+                    container_infos.append(container_info)
+
+                except Exception as e:
+                    logger.warning(f"Error processing container {container.id}: {e}")
+                    continue
+
+            logger.info(f"Listed {len(container_infos)} containers (all={request.all})")
+
+            return dockyard_pb2.ListContainersResponse(
+                success=True,
+                containers=container_infos,
+                message=f"Found {len(container_infos)} containers"
+            )
+
+        except Exception as e:
+            logger.error(f"ListContainers error: {e}")
+            return dockyard_pb2.ListContainersResponse(
+                success=False,
+                message=f"Error listing containers: {str(e)}"
+            )
+
+    def InspectContainer(self, request, context):
+        """Get detailed container information as JSON"""
+        try:
+            container_identifier = request.container_identifier
+
+            # Find the container
+            try:
+                container = self.docker_client.containers.get(container_identifier)
+            except docker.errors.NotFound:
+                return dockyard_pb2.InspectContainerResponse(
+                    success=False,
+                    message=f"Container '{container_identifier}' not found"
+                )
+
+            # Get full container inspection data
+            container.reload()
+            inspection_data = container.attrs
+
+            # Convert to JSON string
+            import json
+            json_data = json.dumps(inspection_data, indent=2, default=str)
+
+            logger.info(f"Inspected container: {container_identifier}")
+
+            return dockyard_pb2.InspectContainerResponse(
+                success=True,
+                json_data=json_data,
+                message=f"Container '{container_identifier}' inspection complete"
+            )
+
+        except Exception as e:
+            logger.error(f"InspectContainer error: {e}")
+            return dockyard_pb2.InspectContainerResponse(
+                success=False,
+                message=f"Error inspecting container: {str(e)}"
+            )
+
+    def RemoveContainer(self, request, context):
+        """Remove a container with optional force"""
+        try:
+            container_identifier = request.container_identifier
+            force = request.force
+
+            # Find the container
+            try:
+                container = self.docker_client.containers.get(container_identifier)
+            except docker.errors.NotFound:
+                return dockyard_pb2.RemoveContainerResponse(
+                    success=False,
+                    message=f"Container '{container_identifier}' not found"
+                )
+
+            container_id = container.id[:12]
+            container_name = container.name
+
+            # Check if container is running and force is not specified
+            container.reload()
+            if container.status == 'running' and not force:
+                return dockyard_pb2.RemoveContainerResponse(
+                    success=False,
+                    message=f"Container '{container_identifier}' is running. Use --force to remove."
+                )
+
+            # Remove the container
+            try:
+                container.remove(force=force)
+                logger.info(f"Removed container: {container_name} ({container_id})")
+
+                return dockyard_pb2.RemoveContainerResponse(
+                    success=True,
+                    container_id=container_id,
+                    message=f"Container '{container_name}' removed successfully"
+                )
+
+            except docker.errors.APIError as e:
+                return dockyard_pb2.RemoveContainerResponse(
+                    success=False,
+                    message=f"Failed to remove container: {str(e)}"
+                )
+
+        except Exception as e:
+            logger.error(f"RemoveContainer error: {e}")
+            return dockyard_pb2.RemoveContainerResponse(
+                success=False,
+                message=f"Error removing container: {str(e)}"
+            )
+
+    def GetStats(self, request, context):
+        """Stream container statistics"""
+        import time
+        from datetime import datetime
+
+        try:
+            container_identifiers = list(request.container_identifiers)
+            stream = request.stream
+
+            # If no specific containers requested, get all running containers
+            if not container_identifiers:
+                containers = self.docker_client.containers.list(filters={'status': 'running'})
+            else:
+                containers = []
+                for identifier in container_identifiers:
+                    try:
+                        container = self.docker_client.containers.get(identifier)
+                        container.reload()
+                        if container.status == 'running':
+                            containers.append(container)
+                        else:
+                            logger.warning(f"Container {identifier} is not running")
+                    except docker.errors.NotFound:
+                        logger.warning(f"Container {identifier} not found")
+                        continue
+
+            if not containers:
+                yield dockyard_pb2.StatsResponse(
+                    success=False,
+                    message="No running containers found"
+                )
+                return
+
+            logger.info(f"Getting stats for {len(containers)} containers, stream={stream}")
+
+            while True:
+                try:
+                    stats_list = []
+                    timestamp = datetime.utcnow().isoformat() + 'Z'
+
+                    for container in containers:
+                        try:
+                            # Get stats (non-streaming to avoid blocking)
+                            stats = container.stats(stream=False)
+
+                            # Calculate CPU percentage
+                            cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - \
+                                       stats['precpu_stats']['cpu_usage']['total_usage']
+                            system_delta = stats['cpu_stats']['system_cpu_usage'] - \
+                                          stats['precpu_stats']['system_cpu_usage']
+
+                            cpu_percentage = 0.0
+                            if system_delta > 0:
+                                # Get number of CPUs safely
+                                percpu_usage = stats['cpu_stats']['cpu_usage'].get('percpu_usage', [])
+                                num_cpus = len(percpu_usage) if percpu_usage else 1
+                                cpu_percentage = (cpu_delta / system_delta) * num_cpus * 100.0
+
+                            # Memory stats
+                            memory_usage = stats['memory_stats'].get('usage', 0)
+                            memory_limit = stats['memory_stats'].get('limit', 0)
+                            memory_percentage = 0.0
+                            if memory_limit > 0:
+                                memory_percentage = (memory_usage / memory_limit) * 100.0
+
+                            # Network stats
+                            network_rx = 0
+                            network_tx = 0
+                            if 'networks' in stats:
+                                for interface in stats['networks'].values():
+                                    network_rx += interface.get('rx_bytes', 0)
+                                    network_tx += interface.get('tx_bytes', 0)
+
+                            # Block I/O stats
+                            block_read = 0
+                            block_write = 0
+                            if 'blkio_stats' in stats and 'io_service_bytes_recursive' in stats['blkio_stats']:
+                                for entry in stats['blkio_stats']['io_service_bytes_recursive']:
+                                    if entry['op'] == 'Read':
+                                        block_read += entry['value']
+                                    elif entry['op'] == 'Write':
+                                        block_write += entry['value']
+
+                            # PIDs
+                            pids = stats.get('pids_stats', {}).get('current', 0)
+
+                            container_stats = dockyard_pb2.ContainerStats(
+                                container_id=container.id[:12],
+                                name=container.name,
+                                cpu_percentage=round(cpu_percentage, 2),
+                                memory_usage=memory_usage,
+                                memory_limit=memory_limit,
+                                memory_percentage=round(memory_percentage, 2),
+                                network_rx=network_rx,
+                                network_tx=network_tx,
+                                block_read=block_read,
+                                block_write=block_write,
+                                pids=pids
+                            )
+
+                            stats_list.append(container_stats)
+
+                        except Exception as e:
+                            logger.warning(f"Error getting stats for container {container.name}: {e}")
+                            continue
+
+                    # Yield the stats
+                    yield dockyard_pb2.StatsResponse(
+                        stats=stats_list,
+                        timestamp=timestamp,
+                        message=f"Stats for {len(stats_list)} containers",
+                        success=True
+                    )
+
+                    # If not streaming, break after first collection
+                    if not stream:
+                        break
+
+                    # Wait 1 second before next collection
+                    time.sleep(1)
+
+                except Exception as e:
+                    logger.error(f"Error in stats collection: {e}")
+                    yield dockyard_pb2.StatsResponse(
+                        success=False,
+                        message=f"Error collecting stats: {str(e)}"
+                    )
+                    break
+
+        except Exception as e:
+            logger.error(f"GetStats error: {e}")
+            yield dockyard_pb2.StatsResponse(
+                success=False,
+                message=f"Internal error: {str(e)}"
+            )
+
+
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     dockyard_pb2_grpc.add_DockyardServiceServicer_to_server(
