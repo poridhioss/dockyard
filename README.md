@@ -4,7 +4,7 @@
 
 Dockyard is a lightweight, distributed container orchestration system that enables remote Docker container management across EC2 instances using gRPC. Built as a progressive learning project, it demonstrates modern microservices architecture, distributed systems design, and DevOps best practices.
 
-## Current Status: Lab 03 Complete ✅
+## Current Status: Lab 04 Complete ✅
 
 ### What's Working Now
 
@@ -12,12 +12,14 @@ Dockyard is a lightweight, distributed container orchestration system that enabl
 - Remote container launch via gRPC
 - Container stop functionality with graceful/force options
 - Container exec functionality with interactive support
+- Container logs functionality with streaming support
 - Named container deployment
 - YAML-based configuration support
 - EC2 agent deployment
 - Local CLI tool
 - Batch operations support
 - Bidirectional streaming for real-time communication
+- Server-side streaming for log data
 
 **Example Commands**:
 ```bash
@@ -40,6 +42,13 @@ dockyard exec web-server ls -la
 dockyard exec --interactive web-server bash
 dockyard exec --user root web-server whoami
 dockyard exec --env "DEBUG=true" web-server python script.py
+
+# View container logs
+dockyard logs web-server
+dockyard logs -f web-server               # Follow mode
+dockyard logs --tail 100 web-server       # Last 100 lines
+dockyard logs --since 1h web-server       # Last hour
+dockyard logs --timestamps web-server     # With timestamps
 ```
 
 ### Technology Stack
@@ -83,7 +92,8 @@ dockyard/
 ├── docs/                  # Documentation
 │   ├── Lab-01/           # Lab 01 documentation
 │   ├── Lab-02/           # Lab 02 documentation
-│   └── Lab-03/           # Lab 03 documentation
+│   ├── Lab-03/           # Lab 03 documentation
+│   └── Lab-04/           # Lab 04 documentation
 │
 ├── labs/                  # Lab resources
 │   └── lab1-launch/      # Sample configurations
@@ -169,29 +179,34 @@ dockyard exec --workdir /tmp web-server pwd     # Working directory
 
 ---
 
-### 📋 Lab 04: Container Logs Functionality
-**Status**: Planned
+### ✅ Lab 04: Container Logs Functionality
+**Status**: Complete
 **Branch**: `lab-04`
 
-**Features to Implement**:
-- View container logs
-- Real-time log streaming
-- Log filtering and searching
-- Timestamp support
+**Features Implemented**:
+- View container logs with streaming support
+- Real-time log streaming and following
+- Log tail operations (last N lines)
+- Time-based log filtering
+- Timestamp display support
+- Stream separation (stdout/stderr)
+- Server-side streaming for efficient log delivery
 
 **New Commands**:
 ```bash
-dockyard logs web-server
-dockyard logs -f web-server        # Follow
-dockyard logs --tail 100 web-server
-dockyard logs --since 1h web-server
+dockyard logs web-server                   # Basic logs
+dockyard logs -f web-server                # Follow mode
+dockyard logs --tail 100 web-server        # Last 100 lines
+dockyard logs --since 1h web-server        # Last hour
+dockyard logs --timestamps web-server      # With timestamps
+dockyard logs --no-stderr web-server       # Stdout only
 ```
 
-**Technical Requirements**:
-- Add `GetLogs` RPC with streaming
-- Implement Docker logs API
-- Real-time log following
-- Log buffering and pagination
+**Key Files**:
+- `proto/dockyard.proto` - Updated with GetLogs RPC (server-side streaming)
+- `agent/main.py` - GetLogs method with Docker logs API integration
+- `cli/main.py` - Logs command with follow, tail, since, timestamps options
+- `docs/Lab-04/` - Complete documentation and examples
 
 ---
 
@@ -249,11 +264,11 @@ dockyard volume create myvol
 - [x] Process management
 - [x] Security contexts
 
-### Lab 04
-- [ ] Real-time data streaming
-- [ ] Log aggregation patterns
-- [ ] Time-based filtering
-- [ ] Buffer management
+### Lab 04 ✅
+- [x] Real-time data streaming
+- [x] Log aggregation patterns
+- [x] Time-based filtering
+- [x] Buffer management
 
 ### Lab 05
 - [ ] Complete CRUD operations
@@ -379,6 +394,7 @@ This project is designed for learning. Each lab builds upon the previous one, in
 - [Lab 01 Guide](docs/Lab-01/README.md)
 - [Lab 02 Guide](docs/Lab-02/README.md)
 - [Lab 03 Guide](docs/Lab-03/README.md)
+- [Lab 04 Guide](docs/Lab-04/README.md)
 - [gRPC Python Documentation](https://grpc.io/docs/languages/python/)
 - [Docker SDK for Python](https://docker-py.readthedocs.io/)
 - [Click Documentation](https://click.palletsprojects.com/)
@@ -395,4 +411,4 @@ This is an educational project designed for learning distributed systems and con
 
 ---
 
-**Current Focus**: Lab 03 is complete with container exec functionality including bidirectional streaming and interactive shell support. Ready to proceed with Lab 04 (Container Logs) implementation when needed.
+**Current Focus**: Lab 04 is complete with container logs functionality including server-side streaming, real-time following, and comprehensive filtering options. Ready to proceed with Lab 05 (Advanced Features) implementation when needed.
