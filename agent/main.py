@@ -415,6 +415,175 @@ class DockyardServicer(dockyard_pb2_grpc.DockyardServiceServicer):
         return result
 
 
+    def GetLogs(self, request, context):
+        """Stream container logs with optional following"""
+        import datetime
+        import re
+
+        try:
+            container_identifier = request.container_identifier
+            follow = request.follow
+            tail = request.tail if request.tail > 0 else "all"
+            since = request.since
+            timestamps = request.timestamps
+            # Default to True for stdout and stderr unless explicitly set to False
+            stdout = True if not hasattr(request, 'stdout') else request.stdout
+            stderr = True if not hasattr(request, 'stderr') else request.stderr
+
+            # Since proto3 defaults booleans to False, we need better logic
+            # If both are False, default to showing both
+            if not request.stdout and not request.stderr:
+                stdout = True
+                stderr = True
+
+            logger.info(f"Getting logs for container: {container_identifier}, follow={follow}, tail={tail}, since={since}")
+
+            # Find the container
+            try:
+                container = self.docker_client.containers.get(container_identifier)
+            except docker.errors.NotFound:
+                yield dockyard_pb2.LogsResponse(
+                    status=dockyard_pb2.LogsStatus(
+                        success=False,
+                        message=f"Container '{container_identifier}' not found"
+                    )
+                )
+                return
+
+            # Parse the 'since' parameter to datetime if provided
+            since_datetime = None
+            if since:
+                # Parse relative time format (e.g., "1h", "30m", "10s")
+                match = re.match(r'^(\d+)([smhd])$', since)
+                if match:
+                    value, unit = match.groups()
+                    value = int(value)
+
+                    if unit == 's':
+                        delta = datetime.timedelta(seconds=value)
+                    elif unit == 'm':
+                        delta = datetime.timedelta(minutes=value)
+                    elif unit == 'h':
+                        delta = datetime.timedelta(hours=value)
+                    elif unit == 'd':
+                        delta = datetime.timedelta(days=value)
+
+                    since_datetime = datetime.datetime.utcnow() - delta
+                    logger.info(f"Logs since: {since_datetime}")
+
+            # Send initial success status
+            yield dockyard_pb2.LogsResponse(
+                status=dockyard_pb2.LogsStatus(
+                    success=True,
+                    message=f"Streaming logs for container '{container_identifier}'"
+                )
+            )
+
+            try:
+                # Get logs from Docker
+                logs_generator = container.logs(
+                    stdout=stdout,
+                    stderr=stderr,
+                    stream=True,
+                    follow=follow,
+                    tail=tail,
+                    since=since_datetime,
+                    timestamps=timestamps
+                )
+
+                # Stream logs to client
+                for log_line in logs_generator:
+                    if not log_line:
+                        continue
+
+                    # Parse Docker's stream format when both stdout and stderr are requested
+                    if stdout and stderr and len(log_line) >= 8:
+                        # Docker multiplexes stdout/stderr with 8-byte header
+                        # Byte 0: stream type (1=stdout, 2=stderr)
+                        # Bytes 1-3: reserved
+                        # Bytes 4-7: size (big-endian)
+                        stream_type = log_line[0]
+
+                        # Check if this looks like a Docker stream header
+                        if stream_type in [1, 2]:
+                            try:
+                                size = int.from_bytes(log_line[4:8], 'big')
+                                if size <= len(log_line) - 8:
+                                    payload = log_line[8:8+size]
+                                    stream_name = 'stdout' if stream_type == 1 else 'stderr'
+                                else:
+                                    # Malformed header, treat as regular log
+                                    payload = log_line
+                                    stream_name = 'stdout'
+                            except:
+                                # Failed to parse, treat as regular log
+                                payload = log_line
+                                stream_name = 'stdout'
+                        else:
+                            # Not a Docker stream header, treat as regular log
+                            payload = log_line
+                            stream_name = 'stdout'
+                    else:
+                        # Single stream or couldn't parse header
+                        payload = log_line
+                        stream_name = 'stdout' if stdout else 'stderr'
+
+                    # Extract timestamp if present (Docker format: "2024-01-01T00:00:00.000000000Z message")
+                    timestamp_str = ""
+                    if timestamps and payload:
+                        # Docker timestamps are at the beginning of the line when timestamps=True
+                        try:
+                            # Decode payload to string to extract timestamp
+                            decoded = payload.decode('utf-8', errors='replace')
+                            # Look for ISO 8601 timestamp at the beginning
+                            ts_match = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)$', decoded)
+                            if ts_match:
+                                timestamp_str = ts_match.group(1)
+                                # Remove timestamp from payload if we extracted it
+                                payload = ts_match.group(2).encode('utf-8')
+                        except:
+                            pass
+
+                    # Send log entry
+                    yield dockyard_pb2.LogsResponse(
+                        log=dockyard_pb2.LogEntry(
+                            data=payload,
+                            stream_type=stream_name,
+                            timestamp=timestamp_str
+                        )
+                    )
+
+                # Send finished status for non-follow mode
+                if not follow:
+                    yield dockyard_pb2.LogsResponse(
+                        status=dockyard_pb2.LogsStatus(
+                            success=True,
+                            message="All logs retrieved",
+                            finished=True
+                        )
+                    )
+
+            except Exception as e:
+                logger.error(f"Error streaming logs: {e}")
+                yield dockyard_pb2.LogsResponse(
+                    status=dockyard_pb2.LogsStatus(
+                        success=False,
+                        message=f"Error streaming logs: {str(e)}",
+                        finished=True
+                    )
+                )
+
+        except Exception as e:
+            logger.error(f"GetLogs error: {e}")
+            yield dockyard_pb2.LogsResponse(
+                status=dockyard_pb2.LogsStatus(
+                    success=False,
+                    message=f"Internal error: {str(e)}",
+                    finished=True
+                )
+            )
+
+
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     dockyard_pb2_grpc.add_DockyardServiceServicer_to_server(
