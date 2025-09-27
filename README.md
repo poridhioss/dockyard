@@ -4,79 +4,6 @@
 
 Dockyard is a lightweight, distributed container orchestration system that enables remote Docker container management across EC2 instances using gRPC. Built as a progressive learning project, it demonstrates modern microservices architecture, distributed systems design, and DevOps best practices.
 
-## Current Status: Lab 05 Complete ✅
-
-### What's Working Now
-
-**Core Functionality**:
-- Remote container launch via gRPC
-- Container stop functionality with graceful/force options
-- Container exec functionality with interactive support
-- Container logs functionality with streaming support
-- Container management (list, inspect, remove)
-- Resource monitoring with real-time statistics
-- Named container deployment
-- YAML-based configuration support
-- EC2 agent deployment
-- Local CLI tool
-- Batch operations support
-- Bidirectional streaming for real-time communication
-- Server-side streaming for log data and statistics
-
-**Example Commands**:
-```bash
-# Basic container launch
-dockyard launch nginx:latest
-
-# Named containers
-dockyard launch redis:alpine --name cache
-
-# YAML configuration support
-dockyard launch -f app.yaml
-
-# Stop containers
-dockyard stop web-server
-dockyard stop --force nginx
-dockyard stop --timeout 30 redis cache
-
-# Execute commands in containers
-dockyard exec web-server ls -la
-dockyard exec --interactive web-server bash
-dockyard exec --user root web-server whoami
-dockyard exec --env "DEBUG=true" web-server python script.py
-
-# View container logs
-dockyard logs web-server
-dockyard logs -f web-server               # Follow mode
-dockyard logs --tail 100 web-server       # Last 100 lines
-dockyard logs --since 1h web-server       # Last hour
-dockyard logs --timestamps web-server     # With timestamps
-
-# Container management
-dockyard ps                               # List running containers
-dockyard ps -a                            # List all containers
-dockyard inspect web-server               # Detailed container info
-dockyard rm web-server                    # Remove container
-dockyard rm --force web-server            # Force remove running container
-dockyard rm container1 container2         # Batch removal
-
-# Resource monitoring
-dockyard stats                            # Real-time stats for all containers
-dockyard stats web-server                 # Stats for specific container
-dockyard stats --no-stream               # Single snapshot
-```
-
-### Technology Stack
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Language** | Python 3.8+ | Core implementation |
-| **RPC Framework** | gRPC | Client-server communication |
-| **Container Runtime** | Docker | Container management |
-| **CLI Framework** | Click | User interface |
-| **Configuration** | YAML | Container definitions |
-| **Cloud Platform** | AWS EC2 | Agent deployment |
-
 ### Architecture
 
 ```
@@ -104,21 +31,12 @@ dockyard/
 ├── proto/                 # gRPC definitions
 │   └── dockyard.proto     # Service contracts
 │
-├── docs/                  # Documentation
-│   ├── Lab-01/           # Lab 01 documentation
-│   ├── Lab-02/           # Lab 02 documentation
-│   ├── Lab-03/           # Lab 03 documentation
-│   └── Lab-04/           # Lab 04 documentation
-│
-├── labs/                  # Lab resources
-│   └── lab1-launch/      # Sample configurations
-│
 └── requirements.txt       # Development dependencies
 ```
 
 ## Lab Roadmap
 
-### ✅ Lab 01: Basic Container Launch
+###  Lab 01: Basic Container Launch
 **Status**: Complete
 **Branch**: `lab-01`
 
@@ -134,9 +52,9 @@ dockyard/
 - `agent/main.py` - Server implementation
 - `cli/main.py` - Client implementation
 
----
 
-### ✅ Lab 02: Container Stop Functionality
+
+###  Lab 02: Container Stop Functionality
 **Status**: Complete
 **Branch**: `lab-02`
 
@@ -160,9 +78,9 @@ dockyard stop container1 container2 container3
 - `cli/main.py` - Stop command with options
 - `labs/lab2-stop/` - Examples and test scripts
 
----
 
-### ✅ Lab 03: Container Exec Functionality
+
+###  Lab 03: Container Exec Functionality
 **Status**: Complete
 **Branch**: `lab-03`
 
@@ -192,9 +110,9 @@ dockyard exec --workdir /tmp web-server pwd     # Working directory
 - `cli/main.py` - Exec command with cross-platform terminal support
 - `docs/Lab-03/` - Complete documentation and examples
 
----
 
-### ✅ Lab 04: Container Logs Functionality
+
+###  Lab 04: Container Logs Functionality
 **Status**: Complete
 **Branch**: `lab-04`
 
@@ -223,9 +141,9 @@ dockyard logs --no-stderr web-server       # Stdout only
 - `cli/main.py` - Logs command with follow, tail, since, timestamps options
 - `docs/Lab-04/` - Complete documentation and examples
 
----
 
-### ✅ Lab 05: Container Management and Resource Monitoring
+
+###  Lab 05: Container Management and Resource Monitoring
 **Status**: Complete
 **Branch**: `lab-05`
 
@@ -258,75 +176,42 @@ dockyard stats --no-stream               # Single snapshot
 - `agent/main.py` - Container management and statistics methods with Docker API integration
 - `cli/main.py` - ps, inspect, rm, stats commands with table formatting and streaming support
 
----
 
-### 📋 Lab 06: Advanced Features
-**Status**: Planned
-**Branch**: `lab-06`
-
-**Features to Implement**:
-- Network management
-- Volume operations
-- Health checks
-- Auto-restart policies
-
-**New Commands**:
-```bash
-# Network operations
-dockyard network ls
-dockyard network create mynet
-dockyard network rm mynet
-
-# Volume operations
-dockyard volume ls
-dockyard volume create myvol
-dockyard volume rm myvol
-```
-
-**Technical Requirements**:
-- Network lifecycle management
-- Volume operations
-- Health monitoring
-- Policy enforcement
 
 ## Learning Objectives by Lab
 
-### Lab 01 ✅
+### Lab 01 
 - [x] gRPC service design
 - [x] Protocol Buffer definitions
 - [x] Docker SDK basics
 - [x] CLI development with Click
 - [x] EC2 deployment
 
-### Lab 02 ✅
+### Lab 02 
 - [x] Container lifecycle management
 - [x] State machine handling
 - [x] Error recovery patterns
 - [x] Batch operations
 
-### Lab 03 ✅
+### Lab 03 
 - [x] Bidirectional streaming
 - [x] Interactive I/O handling
 - [x] Process management
 - [x] Security contexts
 
-### Lab 04 ✅
+### Lab 04 
 - [x] Real-time data streaming
 - [x] Log aggregation patterns
 - [x] Time-based filtering
 - [x] Buffer management
 
-### Lab 05 ✅
+### Lab 05 
 - [x] Complete CRUD operations
 - [x] Resource monitoring
 - [x] Table-based data presentation
 - [x] Real-time streaming statistics
 
-### Lab 06
-- [ ] Network isolation
-- [ ] Persistent storage
-- [ ] Health monitoring
-- [ ] Policy enforcement
+
 
 ## Development Setup
 
@@ -373,94 +258,3 @@ python3 cli/main.py --host <ec2-ip> launch nginx:latest
 - `lab-04` - Lab 04 implementation (cumulative)
 - `lab-05` - Complete implementation
 
-### Progression Path
-Each lab branch contains:
-1. Previous lab functionality
-2. New features for current lab
-3. Updated documentation
-4. Test cases and examples
-
-## Key Design Decisions
-
-### Why gRPC?
-- Language agnostic communication
-- Efficient binary protocol
-- Built-in streaming support
-- Strong typing with Protocol Buffers
-
-### Why Separate Requirements?
-- Component independence
-- Minimal dependencies per service
-- Easier deployment and scaling
-- Better security posture
-
-### Why EC2 for Agent?
-- Real-world deployment scenario
-- Network isolation testing
-- Production-like environment
-- Scalability demonstration
-
-## Future Enhancements (Beyond Lab 05)
-
-### Potential Lab 06: Security
-- TLS/mTLS for gRPC
-- Authentication tokens
-- RBAC implementation
-- Secrets management
-
-### Potential Lab 07: High Availability
-- Multiple agent support
-- Load balancing
-- Failover mechanisms
-- State synchronization
-
-### Potential Lab 08: Orchestration
-- Docker Compose support
-- Service dependencies
-- Health checks
-- Auto-restart policies
-
-### Potential Lab 09: Monitoring
-- Prometheus metrics
-- Grafana dashboards
-- Log aggregation
-- Alerting
-
-### Potential Lab 10: Kubernetes Migration
-- Container to Pod mapping
-- Service discovery
-- ConfigMaps/Secrets
-- Deployment strategies
-
-## Contributing
-
-This project is designed for learning. Each lab builds upon the previous one, introducing new concepts progressively. Feel free to:
-- Extend existing labs
-- Add new features
-- Improve documentation
-- Share your implementations
-
-## Resources
-
-### Documentation
-- [Lab 01 Guide](docs/Lab-01/README.md)
-- [Lab 02 Guide](docs/Lab-02/README.md)
-- [Lab 03 Guide](docs/Lab-03/README.md)
-- [Lab 04 Guide](docs/Lab-04/README.md)
-- [gRPC Python Documentation](https://grpc.io/docs/languages/python/)
-- [Docker SDK for Python](https://docker-py.readthedocs.io/)
-- [Click Documentation](https://click.palletsprojects.com/)
-
-### Prerequisites Knowledge
-- Python programming
-- Basic Docker commands
-- Linux command line
-- Network fundamentals
-
-## License
-
-This is an educational project designed for learning distributed systems and container orchestration.
-
----
-
-**Current Focus**: Lab 05 is complete with container management (ps, inspect, rm) and resource monitoring (stats) functionality including real-time streaming statistics, table formatting, and batch operations. Ready to proceed with Lab 06 (Network & Volume Management) implementation when needed.
