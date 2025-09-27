@@ -136,6 +136,25 @@ class DockyardClient:
             click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
             return None
 
+    def get_logs(self, container_identifier, follow=False, tail=0, since=None, timestamps=False, stdout=True, stderr=True):
+        """Get container logs with streaming support"""
+        request = dockyard_pb2.LogsRequest(
+            container_identifier=container_identifier,
+            follow=follow,
+            tail=tail,
+            since=since or '',
+            timestamps=timestamps,
+            stdout=stdout,
+            stderr=stderr
+        )
+
+        try:
+            response_stream = self.stub.GetLogs(request)
+            return response_stream
+        except grpc.RpcError as e:
+            click.echo(f"Error: Failed to connect to agent - {e.details()}", err=True)
+            return None
+
     def close(self):
         self.channel.close()
 
@@ -349,6 +368,111 @@ def exec(ctx, container, command, interactive, user, workdir, env):
 
     except KeyboardInterrupt:
         click.echo("\nExecution interrupted by user")
+        client.close()
+        sys.exit(130)  # Standard exit code for Ctrl+C
+    except Exception as e:
+        click.echo(f"Unexpected error: {e}", err=True)
+        client.close()
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('container', required=True)
+@click.option('--follow', '-f', is_flag=True, help='Follow log output (like tail -f)')
+@click.option('--tail', '-n', default=0, help='Number of lines from end (0 = all)')
+@click.option('--since', help='Show logs since relative time (e.g., 1h, 30m, 10s)')
+@click.option('--timestamps', '-t', is_flag=True, help='Show timestamps')
+@click.option('--no-stdout', is_flag=True, help='Do not include stdout')
+@click.option('--no-stderr', is_flag=True, help='Do not include stderr')
+@click.pass_context
+def logs(ctx, container, follow, tail, since, timestamps, no_stdout, no_stderr):
+    """View container logs
+
+    Examples:
+        dockyard logs web-server
+        dockyard logs -f web-server
+        dockyard logs --tail 100 web-server
+        dockyard logs --since 1h web-server
+        dockyard logs -f -t web-server
+    """
+    client = ctx.obj['client']
+
+    # Determine which streams to include
+    stdout = not no_stdout
+    stderr = not no_stderr
+
+    if not stdout and not stderr:
+        click.echo("Error: Cannot exclude both stdout and stderr", err=True)
+        sys.exit(1)
+
+    # Validate tail option
+    if tail < 0:
+        click.echo("Error: Tail value must be non-negative", err=True)
+        sys.exit(1)
+
+    # Validate since format if provided
+    if since:
+        import re
+        if not re.match(r'^\d+[smhd]$', since):
+            click.echo("Error: Invalid since format. Use format like '1h', '30m', '10s', '7d'", err=True)
+            sys.exit(1)
+
+    click.echo(f"{'Following' if follow else 'Getting'} logs for container '{container}'...")
+
+    if tail > 0:
+        click.echo(f"Showing last {tail} lines")
+    if since:
+        click.echo(f"Logs since {since} ago")
+
+    try:
+        # Get response stream
+        response_stream = client.get_logs(
+            container_identifier=container,
+            follow=follow,
+            tail=tail,
+            since=since,
+            timestamps=timestamps,
+            stdout=stdout,
+            stderr=stderr
+        )
+
+        if not response_stream:
+            sys.exit(1)
+
+        # Handle responses
+        for response in response_stream:
+            if response.HasField('status'):
+                status = response.status
+                if not status.success:
+                    click.echo(f"Error: {status.message}", err=True)
+                    sys.exit(1)
+
+                if status.finished:
+                    # Non-follow mode completed
+                    break
+
+            elif response.HasField('log'):
+                log_entry = response.log
+                data = log_entry.data
+
+                # Format output with optional coloring for stderr
+                if log_entry.stream_type == 'stderr':
+                    # Output to stderr
+                    if timestamps and log_entry.timestamp:
+                        sys.stderr.buffer.write(f"{log_entry.timestamp} ".encode('utf-8'))
+                    sys.stderr.buffer.write(data)
+                    sys.stderr.buffer.flush()
+                else:
+                    # Output to stdout
+                    if timestamps and log_entry.timestamp:
+                        sys.stdout.buffer.write(f"{log_entry.timestamp} ".encode('utf-8'))
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+
+        client.close()
+
+    except KeyboardInterrupt:
+        click.echo("\nLog streaming interrupted by user")
         client.close()
         sys.exit(130)  # Standard exit code for Ctrl+C
     except Exception as e:

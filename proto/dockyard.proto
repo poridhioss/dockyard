@@ -6,6 +6,7 @@ service DockyardService {
     rpc LaunchContainer(LaunchRequest) returns (LaunchResponse);
     rpc StopContainer(StopRequest) returns (StopResponse);
     rpc ExecContainer(stream ExecRequest) returns (stream ExecResponse);
+    rpc GetLogs(LogsRequest) returns (stream LogsResponse);
 }
 
 message LaunchRequest {
@@ -70,4 +71,33 @@ message ExecStatus {
 message ExecOutput {
     bytes data = 1;                  // stdout/stderr data
     string stream_type = 2;          // "stdout" or "stderr"
+}
+
+message LogsRequest {
+    string container_identifier = 1; // name or ID
+    bool follow = 2;                 // follow log output (like tail -f)
+    int32 tail = 3;                  // number of lines from end (0 = all)
+    string since = 4;                // relative time (e.g., "1h", "30m", "10s")
+    bool timestamps = 5;             // show timestamps
+    bool stdout = 6;                 // include stdout (default true)
+    bool stderr = 7;                 // include stderr (default true)
+}
+
+message LogsResponse {
+    oneof response_type {
+        LogsStatus status = 1;
+        LogEntry log = 2;
+    }
+}
+
+message LogsStatus {
+    bool success = 1;
+    string message = 2;
+    bool finished = 3;               // true when all logs have been sent (for non-follow mode)
+}
+
+message LogEntry {
+    bytes data = 1;                  // log line data
+    string stream_type = 2;          // "stdout" or "stderr"
+    string timestamp = 3;            // ISO 8601 timestamp (if timestamps enabled)
 }
