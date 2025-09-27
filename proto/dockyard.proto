@@ -7,6 +7,10 @@ service DockyardService {
     rpc StopContainer(StopRequest) returns (StopResponse);
     rpc ExecContainer(stream ExecRequest) returns (stream ExecResponse);
     rpc GetLogs(LogsRequest) returns (stream LogsResponse);
+    rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+    rpc InspectContainer(InspectContainerRequest) returns (InspectContainerResponse);
+    rpc RemoveContainer(RemoveContainerRequest) returns (RemoveContainerResponse);
+    rpc GetStats(StatsRequest) returns (stream StatsResponse);
 }
 
 message LaunchRequest {
@@ -100,4 +104,71 @@ message LogEntry {
     bytes data = 1;                  // log line data
     string stream_type = 2;          // "stdout" or "stderr"
     string timestamp = 3;            // ISO 8601 timestamp (if timestamps enabled)
+}
+
+message ListContainersRequest {
+    bool all = 1;                    // Show all containers (including stopped)
+}
+
+message ContainerInfo {
+    string id = 1;                   // Container ID (short)
+    string image = 2;                // Image name
+    string command = 3;              // Command being run
+    string created = 4;              // Creation time
+    string status = 5;               // Current status
+    string ports = 6;                // Port mappings
+    string names = 7;                // Container name
+}
+
+message ListContainersResponse {
+    bool success = 1;
+    repeated ContainerInfo containers = 2;
+    string message = 3;
+}
+
+message InspectContainerRequest {
+    string container_identifier = 1; // name or ID
+}
+
+message InspectContainerResponse {
+    bool success = 1;
+    string json_data = 2;            // Full JSON inspection data
+    string message = 3;
+}
+
+message RemoveContainerRequest {
+    string container_identifier = 1; // name or ID
+    bool force = 2;                  // Force removal of running container
+}
+
+message RemoveContainerResponse {
+    bool success = 1;
+    string container_id = 2;
+    string message = 3;
+}
+
+message StatsRequest {
+    repeated string container_identifiers = 1; // Empty = all running containers
+    bool stream = 2;                 // Continuous streaming vs one-time
+}
+
+message ContainerStats {
+    string container_id = 1;
+    string name = 2;
+    double cpu_percentage = 3;
+    uint64 memory_usage = 4;         // Memory usage in bytes
+    uint64 memory_limit = 5;         // Memory limit in bytes
+    double memory_percentage = 6;
+    uint64 network_rx = 7;           // Network received bytes
+    uint64 network_tx = 8;           // Network transmitted bytes
+    uint64 block_read = 9;           // Block I/O read bytes
+    uint64 block_write = 10;         // Block I/O write bytes
+    uint32 pids = 11;                // Number of PIDs
+}
+
+message StatsResponse {
+    repeated ContainerStats stats = 1;
+    string timestamp = 2;            // When stats were collected
+    string message = 3;              // Error message if any
+    bool success = 4;
 }

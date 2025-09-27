@@ -4,7 +4,7 @@
 
 Dockyard is a lightweight, distributed container orchestration system that enables remote Docker container management across EC2 instances using gRPC. Built as a progressive learning project, it demonstrates modern microservices architecture, distributed systems design, and DevOps best practices.
 
-## Current Status: Lab 04 Complete ✅
+## Current Status: Lab 05 Complete ✅
 
 ### What's Working Now
 
@@ -13,13 +13,15 @@ Dockyard is a lightweight, distributed container orchestration system that enabl
 - Container stop functionality with graceful/force options
 - Container exec functionality with interactive support
 - Container logs functionality with streaming support
+- Container management (list, inspect, remove)
+- Resource monitoring with real-time statistics
 - Named container deployment
 - YAML-based configuration support
 - EC2 agent deployment
 - Local CLI tool
 - Batch operations support
 - Bidirectional streaming for real-time communication
-- Server-side streaming for log data
+- Server-side streaming for log data and statistics
 
 **Example Commands**:
 ```bash
@@ -49,6 +51,19 @@ dockyard logs -f web-server               # Follow mode
 dockyard logs --tail 100 web-server       # Last 100 lines
 dockyard logs --since 1h web-server       # Last hour
 dockyard logs --timestamps web-server     # With timestamps
+
+# Container management
+dockyard ps                               # List running containers
+dockyard ps -a                            # List all containers
+dockyard inspect web-server               # Detailed container info
+dockyard rm web-server                    # Remove container
+dockyard rm --force web-server            # Force remove running container
+dockyard rm container1 container2         # Batch removal
+
+# Resource monitoring
+dockyard stats                            # Real-time stats for all containers
+dockyard stats web-server                 # Stats for specific container
+dockyard stats --no-stream               # Single snapshot
 ```
 
 ### Technology Stack
@@ -210,38 +225,69 @@ dockyard logs --no-stderr web-server       # Stdout only
 
 ---
 
-### 📋 Lab 05: Advanced Features
-**Status**: Planned
+### ✅ Lab 05: Container Management and Resource Monitoring
+**Status**: Complete
 **Branch**: `lab-05`
 
-**Features to Implement**:
-- Container listing and inspection
-- Resource monitoring
-- Network management
-- Volume operations
+**Features Implemented**:
+- Container listing with table formatting
+- Container inspection with detailed JSON output
+- Container removal with batch operations
+- Real-time resource monitoring with streaming statistics
+- Human-readable data formatting
+- Force operations for running containers
 
 **New Commands**:
 ```bash
-# Container operations
-dockyard ps [-a]
-dockyard inspect web-server
-dockyard stats web-server
-dockyard rm web-server
+# Container management
+dockyard ps                               # List running containers
+dockyard ps -a                            # List all containers (including stopped)
+dockyard inspect web-server               # Detailed container inspection (JSON)
+dockyard rm web-server                    # Remove container
+dockyard rm --force web-server            # Force remove running container
+dockyard rm container1 container2         # Batch removal
 
+# Resource monitoring
+dockyard stats                            # Real-time stats for all containers
+dockyard stats web-server                 # Stats for specific container
+dockyard stats --no-stream               # Single snapshot
+```
+
+**Key Files**:
+- `proto/dockyard.proto` - Updated with ListContainers, InspectContainer, RemoveContainer, GetStats RPCs
+- `agent/main.py` - Container management and statistics methods with Docker API integration
+- `cli/main.py` - ps, inspect, rm, stats commands with table formatting and streaming support
+
+---
+
+### 📋 Lab 06: Advanced Features
+**Status**: Planned
+**Branch**: `lab-06`
+
+**Features to Implement**:
+- Network management
+- Volume operations
+- Health checks
+- Auto-restart policies
+
+**New Commands**:
+```bash
 # Network operations
 dockyard network ls
 dockyard network create mynet
+dockyard network rm mynet
 
 # Volume operations
 dockyard volume ls
 dockyard volume create myvol
+dockyard volume rm myvol
 ```
 
 **Technical Requirements**:
-- Multiple new RPC endpoints
-- Advanced Docker API integration
-- Resource metrics collection
-- Network/volume lifecycle management
+- Network lifecycle management
+- Volume operations
+- Health monitoring
+- Policy enforcement
 
 ## Learning Objectives by Lab
 
@@ -270,11 +316,17 @@ dockyard volume create myvol
 - [x] Time-based filtering
 - [x] Buffer management
 
-### Lab 05
-- [ ] Complete CRUD operations
-- [ ] Resource monitoring
+### Lab 05 ✅
+- [x] Complete CRUD operations
+- [x] Resource monitoring
+- [x] Table-based data presentation
+- [x] Real-time streaming statistics
+
+### Lab 06
 - [ ] Network isolation
 - [ ] Persistent storage
+- [ ] Health monitoring
+- [ ] Policy enforcement
 
 ## Development Setup
 
@@ -411,4 +463,4 @@ This is an educational project designed for learning distributed systems and con
 
 ---
 
-**Current Focus**: Lab 04 is complete with container logs functionality including server-side streaming, real-time following, and comprehensive filtering options. Ready to proceed with Lab 05 (Advanced Features) implementation when needed.
+**Current Focus**: Lab 05 is complete with container management (ps, inspect, rm) and resource monitoring (stats) functionality including real-time streaming statistics, table formatting, and batch operations. Ready to proceed with Lab 06 (Network & Volume Management) implementation when needed.
