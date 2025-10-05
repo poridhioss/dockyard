@@ -4,35 +4,8 @@
 
 Dockyard is a lightweight, distributed container orchestration system that enables remote Docker container management across EC2 instances using gRPC. Built as a progressive learning project, it demonstrates modern microservices architecture, distributed systems design, and DevOps best practices.
 
-### Architecture
+<img width="1525" height="658" alt="image" src="https://github.com/user-attachments/assets/696d2053-c582-47dd-9929-46516e484eca" />
 
-```
-┌─────────────────┐         gRPC          ┌─────────────────┐
-│   Local CLI     │◄──────────────────────►│   EC2 Agent     │
-│                 │      Port 50051        │                 │
-└─────────────────┘                        └─────────────────┘
-        │                                           │
-        │                                           │
-    User Input                                Docker Daemon
-```
-
-### Project Structure
-
-```
-dockyard/
-├── agent/                  # Server component (EC2)
-│   ├── main.py            # gRPC server implementation
-│   └── requirements.txt   # Agent-specific dependencies
-│
-├── cli/                   # Client component (Local)
-│   ├── main.py            # CLI implementation
-│   └── requirements.txt   # CLI-specific dependencies
-│
-├── proto/                 # gRPC definitions
-│   └── dockyard.proto     # Service contracts
-│
-└── requirements.txt       # Development dependencies
-```
 
 ## Lab Roadmap
 
