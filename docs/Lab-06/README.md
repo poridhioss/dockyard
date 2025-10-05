@@ -45,6 +45,16 @@ git checkout lab-06
 # Verify you're on the right branch and see what's included
 git branch
 ls -la
+
+# Generate protobuf files from proto definition
+python3 -m grpc_tools.protoc \
+  -I./proto \
+  --python_out=. \
+  --grpc_python_out=. \
+  proto/dockyard.proto
+
+# Verify protobuf files were created
+ls -la dockyard_pb2*.py
 ```
 
 ### 2. Understanding the Lab 06 Changes
@@ -1105,9 +1115,13 @@ cd ~/dockyard
 ```
 
 ```bash
-# On local: Package and upload agent
+# On local: Package and upload agent (includes protobuf files)
 tar czf agent_deploy.tar.gz agent/ dockyard_pb2.py dockyard_pb2_grpc.py
 scp -i key.pem agent_deploy.tar.gz ubuntu@$EC2_IP:~/dockyard/
+
+# Alternatively, upload files separately
+scp -i key.pem -r agent/ ubuntu@$EC2_IP:~/dockyard/
+scp -i key.pem dockyard_pb2.py dockyard_pb2_grpc.py ubuntu@$EC2_IP:~/dockyard/
 ```
 
 ```bash
@@ -1200,6 +1214,86 @@ python3 cli/main.py --host $EC2_IP --port 50051 ps
 # Expected: Container list or "No containers found"
 ```
 
+## Troubleshooting
+
+### ModuleNotFoundError: No module named 'dockyard_pb2'
+
+If you encounter this error when running the agent or CLI, it means the protobuf files are missing.
+
+**Root Cause:**
+The `dockyard_pb2.py` and `dockyard_pb2_grpc.py` files are generated from the proto definition and are required for both the agent and CLI to function.
+
+**Solution:**
+
+Generate the protobuf files from the proto definition:
+
+```bash
+# From the dockyard project root directory
+python3 -m grpc_tools.protoc \
+  -I./proto \
+  --python_out=. \
+  --grpc_python_out=. \
+  proto/dockyard.proto
+
+# Verify the files were created
+ls -la dockyard_pb2*.py
+```
+
+This creates two files:
+- `dockyard_pb2.py` - Message definitions (requests, responses, data structures)
+- `dockyard_pb2_grpc.py` - Service definitions (RPC methods, client/server stubs)
+
+**On EC2:**
+
+If you encounter this error on EC2, ensure the protobuf files are included in your deployment:
+
+```bash
+# Option 1: Include in tarball (recommended)
+tar czf agent_deploy.tar.gz agent/ dockyard_pb2.py dockyard_pb2_grpc.py
+scp -i key.pem agent_deploy.tar.gz ubuntu@$EC2_IP:~/dockyard/
+
+# Option 2: Upload separately
+scp -i key.pem dockyard_pb2.py dockyard_pb2_grpc.py ubuntu@$EC2_IP:~/dockyard/
+```
+
+### PYTHONPATH Not Set
+
+If imports fail with `ModuleNotFoundError: No module named 'agent'`, ensure PYTHONPATH is set:
+
+```bash
+# On EC2
+export PYTHONPATH=/home/ubuntu/dockyard
+
+# On local
+export PYTHONPATH=$(pwd)
+```
+
+### Authentication Errors
+
+**Error:** `UNAUTHENTICATED: Invalid or missing authentication token`
+
+**Solution:** Ensure the `DOCKYARD_AUTH_TOKEN` environment variable is set on both agent and CLI:
+
+```bash
+# Check if token is set
+echo $DOCKYARD_AUTH_TOKEN
+
+# Set token if missing
+export DOCKYARD_AUTH_TOKEN=<your-token>
+```
+
+### Permission Denied: /var/log/dockyard
+
+**Warning:** `Failed to setup file logging: [Errno 13] Permission denied: '/var/log/dockyard'`
+
+This is a harmless warning. The agent will continue to log to console. To fix:
+
+```bash
+# On EC2
+sudo mkdir -p /var/log/dockyard
+sudo chown ubuntu:ubuntu /var/log/dockyard
+```
+
 ## Comparing Old vs New Architecture
 
 ### Before Refactoring (Labs 01-05)
@@ -1274,19 +1368,6 @@ python3 cli/main.py --host $EC2_IP --port 50051 ps
 6. **Security by Design**: Authentication built into the architecture from the start, not bolted on later.
 
 7. **Clean Architecture**: Inner layers (services) don't depend on outer layers (transport), maintaining flexibility.
-
-## Next Steps
-
-After completing Lab 06, consider these enhancements:
-
-1. **TLS/SSL**: Add transport encryption using gRPC TLS
-2. **Role-Based Access Control (RBAC)**: Different tokens with different permissions
-3. **Audit Logging**: Track who did what and when
-4. **Rate Limiting**: Prevent abuse with request rate limits
-5. **Metrics and Monitoring**: Prometheus metrics for agent health
-6. **Unit Tests**: Comprehensive test coverage for all services
-7. **CLI Configuration File**: Save frequently used settings
-8. **Interactive Shell**: Build an interactive REPL for the CLI
 
 ## Conclusion
 
