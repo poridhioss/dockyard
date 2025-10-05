@@ -104,4 +104,5 @@ coverage.xml
 # mypy
 .mypy_cache/
 .dmypy.json
-dmypy.json
+dmypy.json*.tar.gz
+key.pem
